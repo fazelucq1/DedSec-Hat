@@ -2,6 +2,10 @@
   <img src="./data/boot.gif" alt="DedSec-Hat boot animation" width="420">
 </p>
 
+<p align="center">
+  <img src="./media/pictures/dedsec-cyd.png" alt="DedSec-Hat on NM-RF-HAT" width="480">
+</p>
+
 # DedSec-Hat
 
 **A personal [Bruce](https://github.com/pr3y/Bruce) fork for the [NM-RF-HAT](https://rockbase.shop) on an ESP32-2432S028 (CYD)**, by [fazelucq](https://github.com/fazelucq1).
@@ -243,7 +247,3 @@ The feature set below, the wiki, and the Discord are upstream Bruce's — still 
 ¹ Core, CYD and StickCs Bad-USB: [here](https://wiki.bruce.computer/features/others/#badusb)
 
 _LITE_VERSION_: TelNet, SSH, WireGuard, ScanHosts, RawSniffer, Brucegotchi, BLEBacon, BLEScan and Interpreter are NOT available for M5Launcher Compatibility
-
-<p align="center">
-  <img src="./media/pictures/dedsec-cyd.png" alt="DedSec-Hat on NM-RF-HAT" width="480">
-</p>
