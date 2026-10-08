@@ -10,18 +10,27 @@ struct BruteProtocol {
     int one[2];   // {duration1, duration2} for bit '1'
     int pilot[2]; // {duration1, duration2} for pilot/sync (0,0 = none)
     int stop[2];  // {duration1, duration2} for stop bit  (0,0 = none)
+    float realFreq; // real-world frequency this brand actually ships on (MHz) - used by "Try All"
 };
 
 // All protocols defined as constexpr data - zero RAM cost, lives in flash
 // Timing convention: positive = HIGH, negative = LOW
+//
+// realFreq: Came/Nice/Ansonic/Holtek are European-market fixed-code brands, sold almost
+// exclusively on 433.92MHz. Linear and Chamberlain are North-American brands from the
+// pre-rolling-code era, sold on the 300-310MHz band, not 433MHz - a sweep that blindly
+// tries every protocol at one frequency wastes the whole Linear/Chamberlain budget on a
+// band those remotes were never built for. "Try All" uses each protocol's own realFreq
+// instead of a single shared frequency, so total time stays ~the same as a single-frequency
+// sweep while actually matching each protocol to the band it exists on.
 static constexpr BruteProtocol brute_protocols[] = {
-    // name               bits  zero           one           pilot            stop
-    {"Came 12bit",       12, {-320, 640},  {-640, 320},  {-11520, 320}, {0, 0}       },
-    {"Nice 12bit",       12, {-700, 1400}, {-1400, 700}, {-25200, 700}, {0, 0}       },
-    {"Ansonic 12bit",    12, {-1111, 555}, {-555, 1111}, {-19425, 555}, {0, 0}       },
-    {"Holtek 12bit",     12, {-870, 430},  {-430, 870},  {-15480, 430}, {0, 0}       },
-    {"Linear 10bit",     10, {500, -1500}, {1500, -500}, {0, 0},        {500, -21500}},
-    {"Chamberlain 9bit", 9,  {-870, 430},  {-430, 870},  {0, 0},        {-3000, 1000}},
+    // name               bits  zero           one           pilot            stop           realFreq
+    {"Came 12bit",       12, {-320, 640},  {-640, 320},  {-11520, 320}, {0, 0},         433.92f},
+    {"Nice 12bit",       12, {-700, 1400}, {-1400, 700}, {-25200, 700}, {0, 0},         433.92f},
+    {"Ansonic 12bit",    12, {-1111, 555}, {-555, 1111}, {-19425, 555}, {0, 0},         433.92f},
+    {"Holtek 12bit",     12, {-870, 430},  {-430, 870},  {-15480, 430}, {0, 0},         433.92f},
+    {"Linear 10bit",     10, {500, -1500}, {1500, -500}, {0, 0},        {500, -21500},  300.00f},
+    {"Chamberlain 9bit", 9,  {-870, 430},  {-430, 870},  {0, 0},        {-3000, 1000},  300.00f},
 };
 
 static constexpr int BRUTE_PROTOCOL_COUNT = sizeof(brute_protocols) / sizeof(brute_protocols[0]);

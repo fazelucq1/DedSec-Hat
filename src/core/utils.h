@@ -6,6 +6,7 @@ void backToMenu();
 void addOptionToMainMenu();
 int getBattery() __attribute__((weak));
 void updateClockTimezone();
+void setClockFromEpoch(uint32_t epoch);
 #if !defined(HAS_RTC)
 void restorePersistedClock();
 #endif

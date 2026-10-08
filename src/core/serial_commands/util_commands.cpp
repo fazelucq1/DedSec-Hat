@@ -53,6 +53,28 @@ uint32_t dateCallback(cmd *c) {
     return true;
 }
 
+// settime <epoch>: sets the clock directly from a Unix epoch (already
+// adjusted to local wall-clock time, i.e. what you'd get from `date +%s`
+// plus the local UTC offset in seconds) - an NTP-free way to set the time
+// on boards with no RTC chip, without needing WiFi credentials typed in.
+uint32_t settimeCallback(cmd *c) {
+    Command cmd(c);
+    String epochStr = cmd.getArgument("epoch").getValue();
+    epochStr.trim();
+    if (epochStr.length() == 0) {
+        serialDevice->println("Usage: settime <local-epoch-seconds>");
+        return false;
+    }
+    uint32_t epoch = (uint32_t)epochStr.toInt();
+    if (epoch < 1735689600UL) { // sanity: after 2025-01-01
+        serialDevice->println("Epoch looks implausible, refusing to set it.");
+        return false;
+    }
+    setClockFromEpoch(epoch);
+    serialDevice->println("Clock set.");
+    return true;
+}
+
 uint32_t i2cCallback(cmd *c) {
     // scan for connected i2c modules
     // derived from https://learn.adafruit.com/scanning-i2c-addresses/arduino
@@ -415,6 +437,8 @@ uint32_t loaderCallback(cmd *c) {
 void createUtilCommands(SimpleCLI *cli) {
     cli->addCommand("uptime", uptimeCallback);
     cli->addCommand("date", dateCallback);
+    Command settimeCmd = cli->addCommand("settime", settimeCallback);
+    settimeCmd.addPosArg("epoch");
     cli->addCommand("i2c", i2cCallback);
     cli->addCommand("free", freeCallback);
     cli->addCommand("info,!,device_info", infoCallback);

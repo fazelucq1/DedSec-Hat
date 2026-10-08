@@ -76,7 +76,8 @@ static bool rf_brute_run_one(int txpin, const BruteProtocol &proto) {
 
         if (code % 10 == 0) {
             displayRedStripe(
-                String(code) + "/" + String(total) + " " + proto.name,
+                String(code) + "/" + String(total) + " " + proto.name + " @" +
+                    String(proto.realFreq, 2) + "MHz",
                 getComplementaryColor2(bruceConfig.priColor),
                 bruceConfig.priColor
             );
@@ -109,21 +110,28 @@ static bool rf_brute_start() {
 // "Try All": sweeps every protocol's full keyspace back-to-back in one run,
 // so you don't have to manually re-pick Protocol + Start six times. Stops
 // immediately (not just the current protocol) on ESC/BOOT.
+//
+// Retunes to each protocol's own realFreq before running it (CC1101 only -
+// the M5 one-pin module is fixed-frequency and setMHZ() is a no-op there),
+// instead of sweeping every protocol at one shared frequency: Linear and
+// Chamberlain are North-American 300MHz-band brands and would never answer
+// on 433.92MHz, so testing them there was both slower than it needed to be
+// (adds nothing) and couldn't ever have worked.
 static bool rf_brute_start_all() {
     int txpin;
 
     if (bruceConfigPins.rfModule == CC1101_SPI_MODULE) {
         txpin = bruceConfigPins.CC1101_bus.io0;
-        if (!initRfModule("tx", brute_frequency)) return false;
+        if (!initRfModule("tx", brute_protocols[0].realFreq)) return false;
     } else {
         txpin = bruceConfigPins.rfTx;
         if (!initRfModule("tx")) return false;
     }
 
     pinMode(txpin, OUTPUT);
-    setMHZ(brute_frequency);
 
     for (int p = 0; p < BRUTE_PROTOCOL_COUNT; ++p) {
+        setMHZ(brute_protocols[p].realFreq);
         if (!rf_brute_run_one(txpin, brute_protocols[p])) break;
     }
 

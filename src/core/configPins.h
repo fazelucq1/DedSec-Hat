@@ -227,7 +227,7 @@ public:
     // RF
     int rfTx = GROVE_SDA;
     int rfRx = GROVE_SCL;
-    int rfModule = M5_RF_MODULE;
+    int rfModule = CC1101_SPI_MODULE;
     float rfFreq = 433.92;
     int rfFxdFreq = 1;
     int rfScanRange = 3;

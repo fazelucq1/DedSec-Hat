@@ -1,5 +1,5 @@
 #include "utils.h"
-#include "core/display.h" // BACK_ARROW_X/Y/SIZE, for the touch zone in touchHeatMap()
+#include "core/display.h" // BACK_TAP_X/Y/W/H, for the touch zone in touchHeatMap()
 #include "core/wifi/wifi_common.h" //to return MAC addr
 #include "scrollableTextArea.h"
 #include <Preferences.h>
@@ -88,6 +88,36 @@ void updateClockTimezone() {
     clock_set = true;
 #endif
     // Update Internal clock to system time
+    struct timeval tv = {.tv_sec = localTime};
+    settimeofday(&tv, nullptr);
+}
+
+// Sets the clock directly from a known-good epoch (already adjusted to local
+// wall-clock time, same convention as updateClockTimezone()'s localTime) -
+// an NTP-free alternative for boards/situations where connecting to WiFi
+// isn't wanted, used by the "settime <epoch>" serial command.
+void setClockFromEpoch(uint32_t epoch) {
+    localTime = (time_t)epoch;
+#if defined(HAS_RTC)
+    struct tm *timeinfo = localtime(&localTime);
+    RTC_TimeTypeDef TimeStruct;
+    TimeStruct.Hours = timeinfo->tm_hour;
+    TimeStruct.Minutes = timeinfo->tm_min;
+    TimeStruct.Seconds = timeinfo->tm_sec;
+    _rtc.SetTime(&TimeStruct);
+    updateTimeStr(_rtc.getTimeStruct());
+#else
+    rtc.setTime(localTime);
+    updateTimeStr(rtc.getTimeStruct());
+    clock_set = true;
+    // Persist immediately rather than waiting for time_persist_task's next
+    // minute tick, so a set-by-hand time survives a power loss right away.
+    Preferences prefs;
+    if (prefs.begin("clock", false)) {
+        prefs.putULong("epoch", epoch);
+        prefs.end();
+    }
+#endif
     struct timeval tv = {.tv_sec = localTime};
     settimeofday(&tv, nullptr);
 }
@@ -250,11 +280,12 @@ void showDeviceInfo() {
 ** Touchscreen Mapping, include this function after reading the touchPoint
 **********************************************************************/
 void touchHeatMap(struct TouchPoint t) {
-    // Visible back-arrow icon drawn by drawBackArrow() (display.cpp), top-center
-    // of every screen using the standard border. Checked first, with a return,
-    // so it's an exclusive zone that doesn't also double-fire UpPress (it sits
-    // in the same grid cell as the invisible UP zone below).
-    if (t.x > BACK_ARROW_X - 6 && t.x < BACK_ARROW_X + BACK_ARROW_SIZE + 6 && t.y < BACK_ARROW_Y + BACK_ARROW_SIZE + 6) {
+    // Visible "[ x ]" tap target drawn by drawBackIndicator() (display.cpp),
+    // top-left, on every screen using the standard border AND redrawn during
+    // scans (see displayRedStripe()). Checked first, with a return, so it's an
+    // exclusive zone (it already sits inside the general top-left-third Esc
+    // zone below - this is just the documented, named version of that).
+    if (t.x > BACK_TAP_X - 4 && t.x < BACK_TAP_X + BACK_TAP_W + 4 && t.y < BACK_TAP_Y + BACK_TAP_H + 4) {
         EscPress = true;
         return;
     }

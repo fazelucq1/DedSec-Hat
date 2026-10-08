@@ -18,13 +18,14 @@ Same offensive-security toolkit Bruce is known for — WiFi/BLE/Sub-GHz/RFID/IR 
 
 This is a source fork, not an independent project — it's built on top of [pr3y/Bruce](https://github.com/pr3y/Bruce) (AGPLv3) and keeps that license. Full write-up of every change, with the reasoning behind each, is in [CUSTOM_FIRMWARE_CHANGES.md](./CUSTOM_FIRMWARE_CHANGES.md). Short version:
 
-- **Rebrand:** boot screen, status bar and the Device Info screen now read "DEDSEC"/"1.0" instead of "Bruce", with `Author: fazelucq`. Custom black-and-white glitch boot animation (`data/boot.gif`, shown above) replaces the stock shark splash — shipped via LittleFS, no SD card needed. Default UI color changed from Bruce's purple to white/light-grey.
 - **New module — RF Wardriving:** `src/modules/rf/rf_wardriving.*` — geo-tags captured Sub-GHz (CC1101) OOK/ASK signals with GPS to CSV (`GPS → Wardriving → Scan Sub-GHz`). Bruce's wardriving was WiFi/BLE only before this.
 - **New feature — RollJam (exp.):** `src/modules/rf/rf_rolljam.*` — single-radio jam/capture approximation for testing rolling-code garage/car remotes, added to the RF menu.
 - **Fix — stuck RF/RFID screens:** "[ESC] to stop" could hang on this board when the touch poll got starved by tight SPI timing loops. Added a BOOT-button (GPIO0) force-stop that bypasses touch entirely, wired into every blocking scan/listen/jam/RFID loop.
-- **Fix/UX — visible back button:** a small "←" chevron, top-center, replacing an invisible touch-only zone.
+- **UX — unified back/stop indicator:** a single `"[ x ]"` tap target, top-left, shown consistently across every menu and tool screen (previously an inconsistent mix of an invisible zone and a separate center-top arrow). Also redrawn from the shared scan/status primitive (`displayRedStripe()`), so it stays live and tappable mid-scan — doubles as a stop button on long-running WiFi/BLE/RF operations.
 - **NRF24 jammer — new "BLE Full" mode:** covers the real 40-channel BLE band with the 3 actual advertising channels weighted higher, replacing a channel table that didn't match real BLE frequencies.
-- **RF Bruteforce — "Try All":** runs all 6 supported fixed-code protocols back-to-back instead of one at a time.
+- **RF Bruteforce — "Try All":** runs all 6 supported fixed-code protocols back-to-back instead of one at a time, each now retuned to its own real-world frequency (433.92MHz for Came/Nice/Ansonic/Holtek, 300MHz for Linear/Chamberlain) instead of sweeping all 6 at one shared frequency — same total runtime, but Linear/Chamberlain now actually transmit on the band their real remotes use.
+- **RF Module default → CC1101:** matches the wardriving/RollJam modules (both CC1101-only) and DIP position 1 on the NM-RF-HAT; see the DIP table below before picking a module in RF → Config.
+- **Clock:** main-menu status bar shows `HH:MM` only (no seconds/AM-PM). New `settime <epoch>` serial command sets the clock directly (no RTC on this board, no WiFi required) — see `src/core/serial_commands/util_commands.cpp`. Automatic NTP re-sync on every boot when WiFi-at-startup is enabled and a network is saved, via Bruce's existing `updateTimezoneTask`.
 
 ## :building_construction: Build & flash
 
@@ -36,6 +37,33 @@ esptool.py --chip esp32 write-flash -z 0x0 Bruce-CYD-2432S028.bin
 
 pio run -e CYD-2432S028 --target uploadfs                 # separate step: flashes data/boot.gif via LittleFS
 ```
+
+## :satellite: Physical setup — NM-RF-HAT DIP switch & pins
+
+The HAT has no MCU of its own — `GPIO22`/`GPIO27` are shared by every Sub-GHz/NFC/IR module
+and physically rerouted by the 6-position DIP switch. **Exactly one of positions 1–5 must be
+ON, and only switch it with the device powered off** — the pin *numbers* in Bruce's Config
+menus never change, only what's electrically behind them does.
+
+| DIP | Module | Bruce menu path | Pins |
+|:---:|--------|------------------|------|
+| 1 | CC1101 (Sub-GHz, 433MHz) | RF → Config → RF Module → **CC1101** | GDO0=22, CSN=27 (shared SPI bus: SCK=18/MISO=19/MOSI=23) |
+| 2 | nRF24 (2.4GHz) | NRF24 → Spectrum / Jammer | CE=22, CSN=27 (same shared SPI bus) |
+| 3 | PN532 (NFC/RFID) | RFID → Config → RFID module → **PN532 on I2C** | SCL=22, SDA=27 |
+| 4 | IR | IR → Config → Ir TX Pin **22** / Ir RX Pin **27** | TX=22, RX=27 |
+| 5 | RF433 one-pin (OOK/ASK) | RF → Config → RF Module → **M5 RF433T/R** | TX=22, RX=27 |
+| 6 | Battery on/off | — (independent of 1–5) | — |
+
+Two things that trip people up:
+
+- **RF has two unrelated software options that both exist at once** — "CC1101" and "M5
+  RF433T/R" in RF → Config → RF Module. Whichever one you pick must match the DIP position,
+  or you're sending a signal into a chip that isn't electrically there. This fork defaults to
+  **CC1101** (DIP 1) since that's what the wardriving and RollJam modules require — if your
+  DIP is on position 5 instead, switch the software module to "M5 RF433T/R" to match.
+- **WiFi, BLE and the SD card don't go through the DIP at all** — WiFi/BLE run on the ESP32
+  itself, and the SD card has its own dedicated chip-select (GPIO5) on the same always-on SPI
+  bus. Nothing to switch for those.
 
 ## :keyboard: Upstream Bruce resources
 

@@ -66,7 +66,7 @@ void displayScrollingText(const String &text, Opt_Coord &coord, bool highlight) 
 ***************************************************************************************/
 void TouchFooter(uint16_t color) {
 #if defined(HAS_TOUCH)
-    tft.drawRoundRect(5, tftHeight + 2, tftWidth - 10, 43, 5, color);
+    tft.drawRoundRect(5, tftHeight + 2, tftWidth - 10, 43, UI_RADIUS, color);
     tft.setTextColor(color);
     tft.setTextSize(FM);
     tft.drawCentreString("PREV", tftWidth / 6, tftHeight + 4, 1);
@@ -79,7 +79,7 @@ void TouchFooter(uint16_t color) {
 ** Description:   Draw touch screen footer
 ***************************************************************************************/
 void MegaFooter(uint16_t color) {
-    tft.drawRoundRect(5, tftHeight + 2, tftWidth - 10, 43, 5, color);
+    tft.drawRoundRect(5, tftHeight + 2, tftWidth - 10, 43, UI_RADIUS, color);
     tft.setTextColor(color);
     tft.setTextSize(FM);
     tft.drawCentreString("Exit", tftWidth / 6, tftHeight + 4, 1);
@@ -195,7 +195,18 @@ void displayRedStripe(const String &text, uint16_t fgcolor, uint16_t bgcolor) {
     if (wrappedLines.size() > 1) { boxHeight = 13 + (wrappedLines.size() * (size == FM ? 8 : 10)); }
 
     tft.drawPixel(0, 0, 0);
-    tft.fillRoundRect(10, tftHeight / 2 - boxHeight / 2, tftWidth - 20, boxHeight, 7, bgcolor);
+#if defined(HAS_TOUCH)
+    // Keep the stop/back tap target alive through a running scan: every
+    // progress/status update that goes through this shared primitive
+    // (WiFi/BLE/RF scans, bruteforce, etc.) refreshes it, so it can't get
+    // silently drawn over and disappear mid-operation.
+    drawBackIndicator();
+#endif
+    int boxY = tftHeight / 2 - boxHeight / 2;
+    tft.fillRoundRect(10, boxY, tftWidth - 20, boxHeight, UI_RADIUS, bgcolor);
+    // Thin outline in a shade of the text color gives the stripe a crisp flat-card
+    // edge instead of a plain color block merging into the background.
+    tft.drawRoundRect(10, boxY, tftWidth - 20, boxHeight, UI_RADIUS, getColorVariation(fgcolor, 40, -1));
     tft.setTextColor(fgcolor, bgcolor);
     tft.setTextSize(size);
 
@@ -211,10 +222,10 @@ void drawButton(
     int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color, const char *text, bool inverted = false
 ) {
     if (inverted) {
-        tft.fillRoundRect(x, y, w, h, 5, color);
+        tft.fillRoundRect(x, y, w, h, UI_RADIUS, color);
     } else {
-        tft.fillRoundRect(x, y, w, h, 5, TFT_BLACK);
-        tft.drawRoundRect(x, y, w, h, 5, color);
+        tft.fillRoundRect(x, y, w, h, UI_RADIUS, TFT_BLACK);
+        tft.drawRoundRect(x, y, w, h, UI_RADIUS, color);
     }
     tft.setTextColor(inverted ? TFT_BLACK : color);
     tft.drawString(text, x + w / 2, y + h);
@@ -561,7 +572,12 @@ int loopOptions(
     bool firstRender = true;
     unsigned long menuOpenTs =
         0; // timestamp when this menu was first rendered (per-invocation, not shared across nested menus)
-    drawMainBorder();
+    // Match isMainMenu to the real menuType from the very first frame - drawing
+    // this wrong-flagged (even briefly, before the main menu's own render
+    // lambda redraws it correctly) leaves residual pixels behind: the "[ x ]"
+    // chip's bounding box doesn't fully match the clock text's clear rect, so
+    // parts of whichever was drawn first can survive the second draw.
+    drawMainBorder(true, menuType == MENU_TYPE_MAIN);
     while (1) {
         // Check for shutdown before drawing menu to avoid drawing a black bar on the screen
         if (exit) break;
@@ -573,7 +589,7 @@ int loopOptions(
             }
             if (millis() - _clock_bat_timer > 30000) {
                 _clock_bat_timer = millis();
-                drawStatusBar(); // update clock and battery status each 30s
+                drawStatusBar(true); // update clock and battery status each 30s (MENU_TYPE_MAIN only)
             }
         }
 
@@ -748,13 +764,26 @@ int loopOptions(
 ** Dependencia: prog_handler =>>    0 - Flash, 1 - LittleFS
 ***************************************************************************************/
 void progressHandler(int progress, size_t total, const String &message) {
+    static int lastBarWidth = 0;
+    const int barRadius = 4;
     int barWidth = map(progress, 0, total, 0, tftWidth - 40);
     if (barWidth < 3) {
         tft.fillRect(6, 27, tftWidth - 12, tftHeight - 33, bruceConfig.bgColor);
-        tft.drawRect(18, tftHeight - 47, tftWidth - 36, 17, bruceConfig.priColor);
+        tft.drawRoundRect(18, tftHeight - 47, tftWidth - 36, 17, barRadius, bruceConfig.priColor);
         displayRedStripe(message, TFT_WHITE, bruceConfig.priColor);
+        lastBarWidth = 0;
     }
-    tft.fillRect(20, tftHeight - 45, barWidth, 13, bruceConfig.priColor);
+    // Ease the fill from where it last was to the new target over a few frames
+    // instead of jumping straight there - reads as a continuous slide rather
+    // than a discrete tick each time progress is reported.
+    const int steps = 5;
+    for (int s = 1; s <= steps; s++) {
+        int w = lastBarWidth + (barWidth - lastBarWidth) * s / steps;
+        if (w > barRadius * 2) tft.fillRoundRect(20, tftHeight - 45, w, 13, barRadius, bruceConfig.priColor);
+        else if (w > 0) tft.fillRect(20, tftHeight - 45, w, 13, bruceConfig.priColor);
+        if (s < steps) vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    lastBarWidth = barWidth;
 }
 
 /***************************************************************************************
@@ -778,14 +807,14 @@ Opt_Coord drawOptions(
     tft.drawPixel(0, 0, bruceConfig.bgColor);
     if (firstRender) {
         tft.fillRoundRect(
-            tftWidth * 0.10, optionsTopY, tftWidth * 0.8, (FM * 8 + 4) * menuSize + 10, 5, bgcolor
+            tftWidth * 0.10, optionsTopY, tftWidth * 0.8, (FM * 8 + 4) * menuSize + 10, UI_RADIUS, bgcolor
         );
         tft.drawRoundRect(
             tftWidth * 0.10,
             tftHeight / 2 - menuSize * (FM * 8 + 4) / 2 - 5,
             tftWidth * 0.8,
             (FM * 8 + 4) * menuSize + 10,
-            5,
+            UI_RADIUS,
             fgcolor
         );
     }
@@ -912,33 +941,54 @@ void drawSubmenu(int index, std::vector<Option> &options, const char *title) {
 
 #if defined(HAS_TOUCH)
     tft.drawCentreString("\\/", tftWidth / 2, middle_down + (FM * LH + 6), 1);
-    tft.setTextColor(getColorVariation(bruceConfig.priColor), bruceConfig.bgColor);
-    tft.drawString("[ x ]", 7, 7, 1);
+    drawBackIndicator();
     TouchFooter();
 #endif
 }
 
-void drawStatusBar() {
+void drawStatusBar(bool showClock) {
     uint8_t bat = getBattery();
     if (bat > 0) drawBatteryStatus(bat);
 
     if (bruceConfig.theme.border) {
-        tft.drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, bruceConfig.priColor);
+        tft.drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, UI_RADIUS, bruceConfig.priColor);
         tft.drawLine(5, 25, tftWidth - 6, 25, bruceConfig.priColor);
     }
 
-    if (clock_set) {
-        setTftDisplay(12, 12, bruceConfig.priColor, 1, bruceConfig.bgColor);
-        tft.fillRect(12, 12, 60, LH, bruceConfig.bgColor);
-#if defined(HAS_RTC)
-        updateTimeStr(_rtc.getTimeStruct());
-#else
-        updateTimeStr(rtc.getTimeStruct());
+    // Top-left corner is shared with the "[ x ]" back/stop indicator
+    // (drawBackIndicator()) on every screen that isn't the top-level main
+    // menu - only one of the two is ever drawn there, so this is gated
+    // instead of just always running.
+    if (showClock) {
+#if defined(HAS_TOUCH)
+        // Clear the whole shared corner (not just the clock text's own small
+        // rect) in case the "[ x ]" chip was the last thing drawn there - its
+        // rounded-chip bounds are taller/positioned differently than the
+        // clock text's clear rect below, so a partial clear can leave a
+        // sliver of it behind.
+        tft.fillRect(BACK_TAP_X, BACK_TAP_Y, BACK_TAP_W, BACK_TAP_H, bruceConfig.bgColor);
 #endif
-        tft.print(timeStr);
-    } else {
-        setTftDisplay(12, 12, bruceConfig.priColor, 1, bruceConfig.bgColor);
-        tft.print("DEDSEC 1.0");
+        if (clock_set) {
+            setTftDisplay(12, 12, bruceConfig.priColor, 1, bruceConfig.bgColor);
+            tft.fillRect(12, 12, 60, LH, bruceConfig.bgColor);
+            // "HH:MM" only here (no seconds, no AM/PM) - this is a glance-at-the-
+            // corner clock, not the precise one shown while setting the time
+            // (that one still goes through the shared updateTimeStr()/timeStr so
+            // it keeps full precision there).
+#if defined(HAS_RTC)
+            struct tm mainMenuTime = _rtc.getTimeStruct();
+#else
+            struct tm mainMenuTime = rtc.getTimeStruct();
+#endif
+            char hhmm[6];
+            int hour = mainMenuTime.tm_hour;
+            if (!bruceConfig.clock24hr) hour = (hour == 0) ? 12 : (hour > 12 ? hour - 12 : hour);
+            snprintf(hhmm, sizeof(hhmm), "%02d:%02d", hour, mainMenuTime.tm_min);
+            tft.print(hhmm);
+        } else {
+            setTftDisplay(12, 12, bruceConfig.priColor, 1, bruceConfig.bgColor);
+            tft.print("DEDSEC 1.0");
+        }
     }
 
     int iconCount = 0;
@@ -1004,24 +1054,25 @@ void drawStatusBar() {
 }
 
 #if defined(HAS_TOUCH)
-// Always-visible "go back" tap target, top-right, on every screen that
-// draws the standard border (menus, RF/NRF/RFID tool screens, etc).
-// Tapping it sets EscPress exactly like the existing invisible top-left-third
-// zone (see touchHeatMap() in utils.cpp) - same effect, just discoverable.
-// Drawn unconditionally (not hidden on the main menu) because several
-// non-menu screens (RF Raw Capture, jammers...) never update menuType, so
-// gating on "are we at top level" would risk hiding it exactly where a way
-// back matters most.
-void drawBackArrow() {
-    uint16_t cx = BACK_ARROW_X + BACK_ARROW_SIZE / 2;
-    uint16_t cy = BACK_ARROW_Y + BACK_ARROW_SIZE / 2;
-    // Left-pointing chevron "<", two strokes drawn as thin filled triangles.
-    tft.fillTriangle(cx + 5, cy - 7, cx + 5, cy, cx - 6, cy - 3, bruceConfig.priColor);
-    tft.fillTriangle(cx + 5, cy + 7, cx + 5, cy, cx - 6, cy + 3, bruceConfig.priColor);
+// Always-visible "go back / stop" tap target, top-left, on every screen that
+// draws the standard border (menus, RF/NRF/RFID tool screens...) AND redrawn
+// from displayRedStripe() (below) so it survives through a running scan too -
+// tap it mid-scan and it's the same EscPress a running loop already checks
+// for, so it doubles as a stop button. Tapping it sets EscPress exactly like
+// the existing invisible top-left-third zone (see touchHeatMap() in
+// utils.cpp) - same effect, just discoverable. Drawn unconditionally (not
+// hidden on the main menu) because several non-menu screens (RF Raw Capture,
+// jammers...) never update menuType, so gating on "are we at top level" would
+// risk hiding it exactly where a way back matters most.
+void drawBackIndicator() {
+    tft.fillRoundRect(BACK_TAP_X, BACK_TAP_Y, BACK_TAP_W, BACK_TAP_H, UI_RADIUS, bruceConfig.bgColor);
+    tft.setTextColor(getColorVariation(bruceConfig.priColor), bruceConfig.bgColor);
+    tft.setTextSize(FM);
+    tft.drawString("[ x ]", BACK_TAP_X + 7, BACK_TAP_Y + 5, 1);
 }
 #endif
 
-void drawMainBorder(bool clear) {
+void drawMainBorder(bool clear, bool isMainMenu) {
     if (clear) {
         tft.drawPixel(0, 0, 0);
         tft.fillScreen(bruceConfig.bgColor);
@@ -1029,13 +1080,14 @@ void drawMainBorder(bool clear) {
     setTftDisplay(12, 12, bruceConfig.priColor, 1, bruceConfig.bgColor);
     tft.setTextDatum(0);
 
-    // if(wifiConnected) {tft.print(timeStr);} else {tft.print("BRUCE 1.0b");}
-
-    drawStatusBar();
+    drawStatusBar(isMainMenu);
 
 #if defined(HAS_TOUCH)
     TouchFooter();
-    drawBackArrow();
+    // Clock and "[ x ]" share the same top-left corner - only the top-level
+    // main menu gets the clock, everything else (where there's somewhere to
+    // actually go back from) gets the indicator instead.
+    if (!isMainMenu) drawBackIndicator();
 #endif
 }
 
@@ -1135,7 +1187,7 @@ Opt_Coord listFiles(int index, std::vector<FileList> fileList) {
     tft.drawPixel(0, 0, bruceConfig.bgColor);
     if (index == 0) {
         tft.fillScreen(bruceConfig.bgColor);
-        tft.drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, bruceConfig.priColor);
+        tft.drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, UI_RADIUS, bruceConfig.priColor);
     }
     tft.setCursor(10, 10);
     tft.setTextSize(FM);

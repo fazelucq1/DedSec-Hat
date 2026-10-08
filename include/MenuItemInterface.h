@@ -39,7 +39,7 @@ public:
             drawIconImg();
             if (bruceConfig.theme.label) drawTitle(scale); // Makes sure to draw over the image
         }
-        drawStatusBar();
+        drawStatusBar(true); // the carousel is only ever the top-level main menu
     }
 
     void drawArrows(float scale = 1) {

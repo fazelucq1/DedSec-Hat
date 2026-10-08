@@ -179,19 +179,27 @@ Opt_Coord drawOptions(
 
 void drawSubmenu(int index, std::vector<Option> &options, const char *title);
 
-void drawStatusBar();
-void drawMainBorder(bool clear = true);
+// showClock: the top-left corner shows EITHER the clock (top-level main menu
+// only) OR the "[ x ]" back/stop indicator (every other screen) - never both,
+// they occupy the same spot.
+void drawStatusBar(bool showClock = false);
+void drawMainBorder(bool clear = true, bool isMainMenu = false);
 void drawMainBorderWithTitle(const String &title, bool clear = true);
 #if defined(HAS_TOUCH)
-void drawBackArrow();
-// Top-center tap target for drawBackArrow(), in screen pixels. Shared with
-// touchHeatMap() (src/core/utils.cpp) so the drawn icon and the tap zone
-// that triggers EscPress never drift apart.
-// Centered (not top-right) so it doesn't sit directly above the footer's
-// NEXT button and get mistaken for/muddled with it.
-#define BACK_ARROW_SIZE 22
-#define BACK_ARROW_X ((tftWidth - BACK_ARROW_SIZE) / 2)
-#define BACK_ARROW_Y 2
+void drawBackIndicator();
+// Top-left "[ x ]" tap target for drawBackIndicator(), in screen pixels.
+// Shared with touchHeatMap() (src/core/utils.cpp) so the drawn label and the
+// tap zone that triggers EscPress never drift apart. Top-left (not the old
+// top-center arrow) per user request, and drawn from displayRedStripe() too
+// so it stays visible/tappable during a running scan, not just on menus.
+#define BACK_TAP_X 2
+#define BACK_TAP_Y 2
+#define BACK_TAP_W 46
+#define BACK_TAP_H 24
+// Shared corner radius for the "modern" flat-rounded look (status stripes,
+// progress bars, back-arrow hit halo) - one knob instead of mismatched
+// per-call-site literals (previously 3/5/7px scattered around display.cpp).
+#define UI_RADIUS 6
 #endif
 void printTitle(const String &title);
 void printSubtitle(const String &subtitle, bool withLine = true);

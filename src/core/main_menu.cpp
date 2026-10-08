@@ -50,7 +50,7 @@ void MainMenu::begin(void) {
                  false,                                  // selected = false
                  [](void *menuItem, bool shouldRender) { // render lambda
                      if (!shouldRender) return false;
-                     drawMainBorder(false);
+                     drawMainBorder(false, true); // top-level main menu: clock, not "[ x ]"
 
                      MenuItemInterface *obj = static_cast<MenuItemInterface *>(menuItem);
                      float scale = float((float)tftWidth / (float)240);
